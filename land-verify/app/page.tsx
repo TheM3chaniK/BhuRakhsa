@@ -22,6 +22,8 @@ export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [draftVertices, setDraftVertices] = useState<[number, number][]>([]);
+  const [draftAreaAcres, setDraftAreaAcres] = useState<number>(0);
 
   useEffect(() => {
     api.listAreas().then((res) => {
@@ -95,6 +97,17 @@ export default function UploadPage() {
         title: caseTitle || file.name,
         description: `Document uploaded: ${file.name}`,
       });
+
+      // Save drafted vertices to localStorage if citizen plotted boundaries
+      if (draftVertices.length > 0) {
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`case_draft_vertices_${createdCase.id}`, JSON.stringify(draftVertices));
+            localStorage.setItem(`case_draft_area_${createdCase.id}`, draftAreaAcres.toString());
+            localStorage.setItem("last_draft_vertices", JSON.stringify(draftVertices));
+          }
+        } catch {}
+      }
 
       // 3. Upload Document
       setStatusMessage("Uploading document to secure storage...");
@@ -234,7 +247,9 @@ export default function UploadPage() {
             📍 Real OpenStreetMap Land Drafter (Optional Deed Boundary)
           </p>
           <span className="font-mono text-[11px] text-brass">
-            SRID: 4326 · Hatgacha Cadastral Grid
+            {draftVertices.length > 0
+              ? `${draftVertices.length} vertices drafted (${draftAreaAcres} acres)`
+              : "SRID: 4326 · Hatgacha Cadastral Grid"}
           </span>
         </div>
         <DynamicLandMap
@@ -242,6 +257,10 @@ export default function UploadPage() {
           initialZoom={15}
           className="h-[320px] w-full"
           allowDrafting={true}
+          onDraftChange={(coords, acres) => {
+            setDraftVertices(coords);
+            setDraftAreaAcres(acres);
+          }}
         />
         <p className="mt-1.5 text-[11px] text-ink-soft">
           💡 Click anywhere on the map or use <strong>"✏️ Draft Deed Boundary"</strong> to plot your land corner vertices.

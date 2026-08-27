@@ -216,9 +216,24 @@ class ApiClient {
   }
 
   async getCaseAudit(caseId: string): Promise<{ items: BackendAuditEvent[] }> {
-    return await this.request<{ items: BackendAuditEvent[] }>(
-      `/cases/${caseId}/audit`
-    );
+    try {
+      const res = await this.request<any>(`/cases/${caseId}/audit`);
+      const rawEvents = Array.isArray(res) ? res : res?.items || [];
+      const items: BackendAuditEvent[] = rawEvents.map((e: any) => ({
+        id: e.id,
+        case_id: e.case_id,
+        actor_id: e.actor_id,
+        actor_type: e.actor_type || "system",
+        action: e.action || "",
+        old_state: e.old_state,
+        new_state: e.new_state,
+        metadata_json: e.metadata_json || {},
+        created_at: e.created_at || new Date().toISOString(),
+      }));
+      return { items };
+    } catch {
+      return { items: [] };
+    }
   }
 
   // ===========================================================================
@@ -233,19 +248,60 @@ class ApiClient {
     const formData = new FormData();
     formData.append("file", file);
 
-    return await this.request<BackendDocument>(`/cases/${caseId}/documents`, {
+    const doc = await this.request<any>(`/cases/${caseId}/documents`, {
       method: "POST",
       body: formData,
     });
+    return {
+      id: doc.id,
+      case_id: doc.case_id,
+      filename: doc.original_filename || doc.filename || file.name,
+      original_filename: doc.original_filename || doc.filename || file.name,
+      file_size_bytes: doc.file_size || doc.file_size_bytes || file.size,
+      file_size: doc.file_size || doc.file_size_bytes || file.size,
+      file_extension: doc.file_extension,
+      mime_type: doc.mime_type || file.type || "application/pdf",
+      document_type: documentType,
+      status: doc.status || "uploaded",
+      page_count: doc.page_count || 1,
+      uploaded_by: doc.uploaded_by,
+      created_at: doc.created_at || new Date().toISOString(),
+      updated_at: doc.updated_at,
+      processed_at: doc.processed_at,
+    };
   }
 
-  async getCaseDocuments(caseId: string): Promise<{ items: BackendDocument[]; total: number }> {
+  async getCaseDocuments(
+    caseId: string
+  ): Promise<{ items: BackendDocument[]; documents: BackendDocument[]; total: number }> {
     try {
-      return await this.request<{ items: BackendDocument[]; total: number }>(
-        `/cases/${caseId}/documents`
-      );
+      const res = await this.request<any>(`/cases/${caseId}/documents`);
+      const rawDocs =
+        res?.documents || res?.items || (Array.isArray(res) ? res : []);
+      const normalized: BackendDocument[] = rawDocs.map((d: any) => ({
+        id: d.id,
+        case_id: d.case_id,
+        filename: d.original_filename || d.filename || "Document",
+        original_filename: d.original_filename || d.filename || "Document",
+        file_size_bytes: d.file_size || d.file_size_bytes || 0,
+        file_size: d.file_size || d.file_size_bytes || 0,
+        file_extension: d.file_extension,
+        mime_type: d.mime_type || "application/pdf",
+        document_type: d.document_type || "deed",
+        status: d.status || "uploaded",
+        page_count: d.page_count || 1,
+        uploaded_by: d.uploaded_by,
+        created_at: d.created_at || new Date().toISOString(),
+        updated_at: d.updated_at,
+        processed_at: d.processed_at,
+      }));
+      return {
+        items: normalized,
+        documents: normalized,
+        total: normalized.length,
+      };
     } catch {
-      return { items: [], total: 0 };
+      return { items: [], documents: [], total: 0 };
     }
   }
 
@@ -277,9 +333,21 @@ class ApiClient {
     docId: string
   ): Promise<{ pages: BackendOCRPage[]; full_text: string }> {
     try {
-      return await this.request<{ pages: BackendOCRPage[]; full_text: string }>(
-        `/documents/${docId}/ocr`
-      );
+      const res = await this.request<any>(`/documents/${docId}/ocr`);
+      const rawPages = res?.pages || (Array.isArray(res) ? res : []);
+      const pages: BackendOCRPage[] = rawPages.map((p: any) => ({
+        id: p.id || `page-${p.page_number}`,
+        document_id: p.document_id || docId,
+        page_number: p.page_number,
+        text: p.text || "",
+        model_name: p.model_name || "deepseek-ocr",
+        processing_time_ms: p.processing_time_ms || 0,
+        created_at: p.created_at || new Date().toISOString(),
+      }));
+      const full_text =
+        res?.full_text ||
+        pages.map((p) => `--- PAGE ${p.page_number} ---\n${p.text}`).join("\n\n");
+      return { pages, full_text };
     } catch {
       return { pages: [], full_text: "" };
     }
@@ -303,11 +371,27 @@ class ApiClient {
 
   async getDocumentExtraction(
     docId: string
-  ): Promise<{ fields: BackendExtractedField[] }> {
+  ): Promise<{ fields: BackendExtractedField[]; document_id?: string; status?: string }> {
     try {
-      return await this.request<{ fields: BackendExtractedField[] }>(
-        `/documents/${docId}/extraction`
-      );
+      const res = await this.request<any>(`/documents/${docId}/extraction`);
+      const rawFields = res?.fields || (Array.isArray(res) ? res : []);
+      const normalizedFields: BackendExtractedField[] = rawFields.map((f: any) => ({
+        id: f.id,
+        document_id: f.document_id || docId,
+        field_name: f.field_name,
+        field_value: f.field_value,
+        normalized_value: f.normalized_value,
+        confidence: typeof f.confidence === "number" ? f.confidence : 0.85,
+        status: f.status || "extracted",
+        evidence_text: f.evidence_text || (f.evidence && f.evidence[0]?.source_text),
+        page_number: f.page_number || (f.evidence && f.evidence[0]?.page_number) || 1,
+        bbox: f.bbox || (f.evidence && f.evidence[0]?.bounding_box),
+      }));
+      return {
+        document_id: res?.document_id || docId,
+        status: res?.status || "completed",
+        fields: normalizedFields,
+      };
     } catch {
       return { fields: [] };
     }
@@ -317,13 +401,57 @@ class ApiClient {
   // Validation, Map & Risk API
   // ===========================================================================
 
+  async getPropertyProfile(caseId: string): Promise<any> {
+    try {
+      return await this.request<any>(`/cases/${caseId}/property-profile`);
+    } catch {
+      return null;
+    }
+  }
+
   async getCaseValidationRuns(
     caseId: string
   ): Promise<{ runs: BackendValidationRun[] }> {
     try {
-      return await this.request<{ runs: BackendValidationRun[] }>(
-        `/cases/${caseId}/validation-runs`
+      let res: any;
+      try {
+        res = await this.request<any>(`/cases/${caseId}/property-profile/validation-runs`);
+      } catch {
+        res = await this.request<any>(`/cases/${caseId}/validation-runs`);
+      }
+      const rawRuns = Array.isArray(res) ? res : res?.runs || [];
+      const runs: BackendValidationRun[] = await Promise.all(
+        rawRuns.map(async (r: any) => {
+          let results = r.results;
+          if (!results && r.id) {
+            try {
+              const resList = await this.request<any[]>(`/validation-runs/${r.id}/results`);
+              if (Array.isArray(resList)) {
+                results = resList.map((item: any) => ({
+                  id: item.id,
+                  field_name: item.field_name,
+                  submitted_value: item.document_value,
+                  reference_value: item.reference_value,
+                  match_status: item.match_status,
+                  match_score: item.match_score,
+                  notes: item.mismatch_reason,
+                }));
+              }
+            } catch {}
+          }
+          return {
+            id: r.id,
+            property_profile_id: r.property_profile_id,
+            validation_type: r.validation_type,
+            status: r.status,
+            overall_score: r.overall_score || 0,
+            executed_rules: r.executed_rules || [],
+            created_at: r.created_at,
+            results: results || [],
+          };
+        })
       );
+      return { runs };
     } catch {
       return { runs: [] };
     }
@@ -331,7 +459,11 @@ class ApiClient {
 
   async getCaseMapData(caseId: string): Promise<BackendMapData | null> {
     try {
-      return await this.request<BackendMapData>(`/cases/${caseId}/map-data`);
+      try {
+        return await this.request<BackendMapData>(`/cases/${caseId}/property-profile/map`);
+      } catch {
+        return await this.request<BackendMapData>(`/cases/${caseId}/map-data`);
+      }
     } catch {
       return null;
     }
@@ -341,9 +473,15 @@ class ApiClient {
     caseId: string
   ): Promise<BackendRiskAssessment | null> {
     try {
-      return await this.request<BackendRiskAssessment>(
-        `/cases/${caseId}/risk-assessment`
-      );
+      try {
+        return await this.request<BackendRiskAssessment>(
+          `/cases/${caseId}/risk-assessment/current`
+        );
+      } catch {
+        return await this.request<BackendRiskAssessment>(
+          `/cases/${caseId}/risk-assessment`
+        );
+      }
     } catch {
       return null;
     }

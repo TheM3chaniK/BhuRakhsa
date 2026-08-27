@@ -145,13 +145,19 @@ export type BackendCase = {
 export type BackendDocument = {
   id: string;
   case_id: string;
-  filename: string;
-  file_size_bytes: number;
+  filename?: string;
+  original_filename?: string;
+  file_size?: number;
+  file_size_bytes?: number;
+  file_extension?: string;
   mime_type: string;
-  document_type: string;
+  document_type?: string;
   status: string;
-  page_count: number;
+  page_count?: number;
+  uploaded_by?: string;
   created_at: string;
+  updated_at?: string;
+  processed_at?: string;
 };
 
 export type BackendOCRPage = {

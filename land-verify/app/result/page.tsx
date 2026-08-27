@@ -36,6 +36,7 @@ function ResultContent() {
     }
   }, [user, router]);
 
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(caseId);
   const [caseData, setCaseData] = useState<BackendCase | null>(null);
   const [riskAssessment, setRiskAssessment] = useState<BackendRiskAssessment | null>(null);
   const [reasons, setReasons] = useState<ReasonItem[]>([]);
@@ -43,10 +44,22 @@ function ResultContent() {
 
   useEffect(() => {
     if (caseId) {
+      setActiveCaseId(caseId);
+    } else {
+      api.listCases({ page: 1, page_size: 1 }).then((res) => {
+        if (res.items && res.items.length > 0) {
+          setActiveCaseId(res.items[0].id);
+        }
+      }).catch(() => {});
+    }
+  }, [caseId]);
+
+  useEffect(() => {
+    if (activeCaseId) {
       setLoading(true);
       // 1. Fetch case metadata from backend
       api
-        .getCase(caseId)
+        .getCase(activeCaseId)
         .then((c) => {
           setCaseData(c);
         })
@@ -54,7 +67,7 @@ function ResultContent() {
 
       // 2. Fetch risk assessment from backend
       api
-        .getCaseRiskAssessment(caseId)
+        .getCaseRiskAssessment(activeCaseId)
         .then((ra) => {
           if (ra) {
             setRiskAssessment(ra);
@@ -75,13 +88,13 @@ function ResultContent() {
         .catch(() => {})
         .finally(() => setLoading(false));
     }
-  }, [caseId]);
+  }, [activeCaseId]);
 
   const riskLevel: RiskLevel =
     riskAssessment?.risk_level || caseData?.risk_level || "UNKNOWN";
 
-  const prevUrl = caseId ? `/validate?caseId=${caseId}` : "/validate";
-  const caseUrl = caseId ? `/case/${caseId}` : "/queue";
+  const prevUrl = activeCaseId ? `/validate?caseId=${activeCaseId}` : "/validate";
+  const caseUrl = activeCaseId ? `/case/${activeCaseId}` : "/queue";
 
   return (
     <div className="mx-auto max-w-3xl px-10 py-14">

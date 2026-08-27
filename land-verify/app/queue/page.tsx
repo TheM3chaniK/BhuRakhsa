@@ -10,8 +10,10 @@ import { api } from "@/lib/api";
 import {
   AreaResponse,
   BackendCase,
+  CaseStatus,
   CaseSummary,
   ReviewQueueItem,
+  ReviewStatus,
   RiskLevel,
 } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -74,33 +76,37 @@ function QueueContent() {
           });
 
           if (queueRes.items && queueRes.items.length > 0) {
-            const mapped: CaseSummary[] = queueRes.items.map((item: ReviewQueueItem) => ({
-              id: item.case_id,
-              caseNumber: item.case_number,
-              village: item.title || "Jurisdictional Property Record",
-              surveyNo: item.case_number,
-              owner: `Risk Score: ${item.risk_score}/100`,
-              risk: item.risk_level || "UNKNOWN",
-              riskScore: item.risk_score,
-              status: item.case_status,
-              reviewStatus: item.review_status,
-              submitted: new Date(item.created_at).toLocaleDateString("en-IN", {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              reason:
-                item.case_status === "APPROVED"
-                  ? "Marked as Solved · Verified Title"
-                  : item.case_status === "REJECTED"
-                  ? "Rejected · Title Discrepancy"
-                  : item.case_status === "PROOF_REQUIRED"
-                  ? "Awaiting Supplementary Citizen Proof"
-                  : item.review_status === "IN_PROGRESS"
-                  ? "Under Active Officer Review"
-                  : "Ready for Verification Determination",
-            }));
+            const mapped: CaseSummary[] = queueRes.items.map((item: ReviewQueueItem) => {
+              const statusNormalized = (item.case_status || "REVIEW_READY").toUpperCase() as CaseStatus;
+              const riskNormalized = (item.risk_level || "UNKNOWN").toUpperCase() as RiskLevel;
+              return {
+                id: item.case_id,
+                caseNumber: item.case_number || `CASE-${item.case_id.slice(0, 8).toUpperCase()}`,
+                village: item.title || "Jurisdictional Property Record",
+                surveyNo: item.case_number,
+                owner: `Risk Score: ${item.risk_score}/100`,
+                risk: riskNormalized,
+                riskScore: item.risk_score,
+                status: statusNormalized,
+                reviewStatus: (item.review_status || "NOT_STARTED").toUpperCase() as ReviewStatus,
+                submitted: new Date(item.created_at).toLocaleDateString("en-IN", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                reason:
+                  statusNormalized === "APPROVED"
+                    ? "Marked as Solved · Verified Title"
+                    : statusNormalized === "REJECTED"
+                    ? "Rejected · Title Discrepancy"
+                    : statusNormalized === "PROOF_REQUIRED"
+                    ? "Awaiting Supplementary Citizen Proof"
+                    : item.review_status?.toUpperCase() === "IN_PROGRESS"
+                    ? "Under Active Officer Review"
+                    : "Ready for Verification Determination",
+              };
+            });
             setCases(mapped);
             return;
           }
@@ -110,31 +116,35 @@ function QueueContent() {
       // Standard listCases scoped to role
       const res = await api.listCases({ page: 1, page_size: 50 });
       if (res.items) {
-        const mapped: CaseSummary[] = res.items.map((c: BackendCase) => ({
-          id: c.id,
-          caseNumber: c.case_number,
-          village: c.title || "Property Record",
-          surveyNo: c.case_number,
-          owner: c.description || "Deed Verification",
-          risk: c.risk_level || "UNKNOWN",
-          status: c.status,
-          submitted: new Date(c.created_at).toLocaleDateString("en-IN", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          reason:
-            c.status === "APPROVED"
-              ? "Marked as Solved · Verified Title"
-              : c.status === "REJECTED"
-              ? "Rejected · Discrepancy Recorded"
-              : c.status === "PROOF_REQUIRED"
-              ? "Supplementary Proof Requested"
-              : c.status === "UNDER_REVIEW"
-              ? "Under Review by Area Officer"
-              : "Awaiting Verification",
-        }));
+        const mapped: CaseSummary[] = res.items.map((c: BackendCase) => {
+          const statusNormalized = (c.status || "REVIEW_READY").toUpperCase() as CaseStatus;
+          const riskNormalized = (c.risk_level || "UNKNOWN").toUpperCase() as RiskLevel;
+          return {
+            id: c.id,
+            caseNumber: c.case_number || `CASE-${c.id.slice(0, 8).toUpperCase()}`,
+            village: c.title || "Property Record",
+            surveyNo: c.case_number,
+            owner: c.description || "Deed Verification",
+            risk: riskNormalized,
+            status: statusNormalized,
+            submitted: new Date(c.created_at).toLocaleDateString("en-IN", {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            reason:
+              statusNormalized === "APPROVED"
+                ? "Marked as Solved · Verified Title"
+                : statusNormalized === "REJECTED"
+                ? "Rejected · Discrepancy Recorded"
+                : statusNormalized === "PROOF_REQUIRED"
+                ? "Supplementary Proof Requested"
+                : statusNormalized === "UNDER_REVIEW"
+                ? "Under Review by Area Officer"
+                : "Awaiting Verification",
+          };
+        });
         setCases(mapped);
       } else {
         setCases([]);
@@ -182,15 +192,23 @@ function QueueContent() {
       setQuickSolveCaseId(null);
       await fetchCases();
     } catch (err: any) {
-      setError(err.message || "Failed to mark case as solved.");
+      if (err.message?.includes("already finalized")) {
+        setSuccessNotice("Case is already finalized and marked as Solved.");
+        setQuickSolveCaseId(null);
+        await fetchCases();
+      } else {
+        setError(err.message || "Failed to mark case as solved.");
+      }
     } finally {
       setIsSolving(false);
     }
   };
 
   const filtered = cases.filter((c) => {
-    const matchesRisk = filterRisk === "ALL" ? true : c.risk === filterRisk;
-    const matchesStatus = filterStatus === "ALL" ? true : c.status === filterStatus;
+    const matchesRisk =
+      filterRisk === "ALL" ? true : c.risk?.toUpperCase() === filterRisk.toUpperCase();
+    const matchesStatus =
+      filterStatus === "ALL" ? true : c.status?.toUpperCase() === filterStatus.toUpperCase();
     return matchesRisk && matchesStatus;
   });
 
@@ -200,7 +218,7 @@ function QueueContent() {
 
   const highCount = cases.filter((c) => c.risk === "HIGH" || c.risk === "CRITICAL").length;
   const pendingCount = cases.filter(
-    (c) => c.status === "REVIEW_READY" || c.status === "UNDER_REVIEW"
+    (c) => c.status === "REVIEW_READY" || c.status === "UNDER_REVIEW" || c.status === "PROCESSING"
   ).length;
 
   return (
@@ -330,7 +348,7 @@ function QueueContent() {
           <p className="mt-1 text-xs text-ink-soft">
             {isCivilian
               ? "You have not submitted any property deeds yet."
-              : "No cases match the selected filters for your assigned area."}
+              : "No cases match your assigned area."}
           </p>
           {isCivilian && (
             <div className="mt-4">
@@ -342,6 +360,26 @@ function QueueContent() {
               </Link>
             </div>
           )}
+        </div>
+      ) : sorted.length === 0 ? (
+        <div className="rounded border border-line bg-paper-dark/20 p-12 text-center">
+          <p className="font-serif text-lg text-ink">
+            No cases under {filterStatus === "APPROVED" ? "✅ Solved & Approved" : filterStatus}
+          </p>
+          <p className="mt-1 text-xs text-ink-soft">
+            There are currently no cases matching the selected status filter.
+          </p>
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilterStatus("ALL");
+                setFilterRisk("ALL");
+              }}
+              className="inline-block rounded bg-ink px-4 py-2 text-xs font-medium text-paper hover:bg-ink/90"
+            >
+              Show All Cases ({cases.length})
+            </button>
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded border border-line">

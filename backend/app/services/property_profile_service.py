@@ -45,7 +45,7 @@ class PropertyProfileService:
     async def generate_profile(
         db: AsyncSession,
         case_id: uuid.UUID,
-        user: User,
+        user: Optional[User] = None,
         force_refresh: bool = False,
     ) -> PropertyProfile:
         """Construct or refresh the canonical PropertyProfile from completed case document extractions."""
@@ -57,7 +57,8 @@ class PropertyProfileService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Case not found.",
             )
-        await CaseAccessService.verify_case_access(db, user, case)
+        if user is not None:
+            await CaseAccessService.verify_case_access(db, user, case)
 
         # 2. Check for existing profile if not forcing refresh
         existing_profile_res = await db.execute(
@@ -282,10 +283,18 @@ class PropertyProfileService:
         )
         profile = res.scalar_one_or_none()
         if not profile:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Property profile has not been generated for this case.",
-            )
+            try:
+                return await PropertyProfileService.generate_profile(
+                    db=db,
+                    case_id=case_id,
+                    user=user,
+                    force_refresh=False,
+                )
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Property profile has not been generated for this case.",
+                )
         return profile
 
     @staticmethod

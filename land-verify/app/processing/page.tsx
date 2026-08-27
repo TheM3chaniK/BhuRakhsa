@@ -27,6 +27,9 @@ function ProcessingContent() {
     }
   }, [user, router]);
 
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(caseId);
+  const [activeDocId, setActiveDocId] = useState<string | null>(docId);
+
   const [fields, setFields] = useState<ExtractedField[]>([]);
   const [ocrText, setOcrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,13 +37,47 @@ function ProcessingContent() {
   const [isTriggering, setIsTriggering] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
+  useEffect(() => {
+    if (docId) setActiveDocId(docId);
+    if (caseId) setActiveCaseId(caseId);
+  }, [caseId, docId]);
+
+  useEffect(() => {
+    const resolveTarget = async () => {
+      if (activeDocId) return;
+
+      let cId = activeCaseId;
+      if (!cId) {
+        try {
+          const casesRes = await api.listCases({ page: 1, page_size: 1 });
+          if (casesRes.items && casesRes.items.length > 0) {
+            cId = casesRes.items[0].id;
+            setActiveCaseId(cId);
+          }
+        } catch {}
+      }
+
+      if (cId) {
+        try {
+          const docsRes = await api.getCaseDocuments(cId);
+          const docs = docsRes.documents || docsRes.items || [];
+          if (docs.length > 0) {
+            setActiveDocId(docs[0].id);
+          }
+        } catch {}
+      }
+    };
+
+    resolveTarget();
+  }, [activeCaseId, activeDocId]);
+
   const loadExtractionData = async () => {
-    if (!docId) return;
+    if (!activeDocId) return;
     setLoading(true);
     try {
       // 1. Fetch processing status
       try {
-        const statusRes = await api.getDocumentProcessingStatus(docId);
+        const statusRes = await api.getDocumentProcessingStatus(activeDocId);
         if (statusRes.processing?.status) {
           setProcessingStatus(statusRes.processing.status);
         } else if (statusRes.document_status) {
@@ -49,7 +86,7 @@ function ProcessingContent() {
       } catch {}
 
       // 2. Fetch OCR text
-      const ocrRes = await api.getDocumentOcr(docId);
+      const ocrRes = await api.getDocumentOcr(activeDocId);
       if (ocrRes && ocrRes.full_text) {
         setOcrText(ocrRes.full_text);
       } else if (ocrRes && ocrRes.pages && ocrRes.pages.length > 0) {
@@ -61,14 +98,17 @@ function ProcessingContent() {
       }
 
       // 3. Fetch structured extraction
-      const res = await api.getDocumentExtraction(docId);
+      const res = await api.getDocumentExtraction(activeDocId);
       if (res && res.fields && res.fields.length > 0) {
         const mapped: ExtractedField[] = res.fields.map((f) => ({
           label: f.field_name
             .replace(/_/g, " ")
             .replace(/\b\w/g, (l) => l.toUpperCase()),
           value: f.field_value || f.normalized_value || "—",
-          confidence: Math.round((f.confidence || 0.85) * 100),
+          confidence: Math.round(
+            (typeof f.confidence === "number" ? f.confidence : 0.85) *
+              (f.confidence && f.confidence <= 1 ? 100 : 1)
+          ),
         }));
         setFields(mapped);
         setProcessingStatus("completed");
@@ -82,11 +122,11 @@ function ProcessingContent() {
 
   // Trigger manual re-run if needed
   const handleTriggerProcessing = async () => {
-    if (!docId) return;
+    if (!activeDocId) return;
     setIsTriggering(true);
     try {
-      await api.processDocument(docId);
-      await api.extractDocument(docId);
+      await api.processDocument(activeDocId);
+      await api.extractDocument(activeDocId);
       await loadExtractionData();
     } catch (err: any) {
       console.error("Trigger error:", err);
@@ -106,7 +146,7 @@ function ProcessingContent() {
 
   // Polling loop
   useEffect(() => {
-    if (!docId) return;
+    if (!activeDocId) return;
     let isMounted = true;
     let pollCount = 0;
 
@@ -120,7 +160,7 @@ function ProcessingContent() {
       }
 
       try {
-        const ocrRes = await api.getDocumentOcr(docId);
+        const ocrRes = await api.getDocumentOcr(activeDocId);
         if (
           ocrRes &&
           (ocrRes.full_text || (ocrRes.pages && ocrRes.pages.length > 0))
@@ -135,14 +175,17 @@ function ProcessingContent() {
           }
         }
 
-        const res = await api.getDocumentExtraction(docId);
+        const res = await api.getDocumentExtraction(activeDocId);
         if (res && res.fields && res.fields.length > 0) {
           const mapped: ExtractedField[] = res.fields.map((f) => ({
             label: f.field_name
               .replace(/_/g, " ")
               .replace(/\b\w/g, (l) => l.toUpperCase()),
             value: f.field_value || f.normalized_value || "—",
-            confidence: Math.round((f.confidence || 0.85) * 100),
+            confidence: Math.round(
+              (typeof f.confidence === "number" ? f.confidence : 0.85) *
+                (f.confidence && f.confidence <= 1 ? 100 : 1)
+            ),
           }));
           if (isMounted) {
             setFields(mapped);
@@ -157,7 +200,7 @@ function ProcessingContent() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [docId]);
+  }, [activeDocId]);
 
   const handleFieldChange = (index: number, val: string) => {
     const updated = [...fields];

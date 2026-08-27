@@ -27,6 +27,7 @@ function ValidateContent() {
     }
   }, [user, router]);
 
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(caseId);
   const [rows, setRows] = useState<ValidationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mapDetails, setMapDetails] = useState<{
@@ -41,9 +42,21 @@ function ValidateContent() {
 
   useEffect(() => {
     if (caseId) {
+      setActiveCaseId(caseId);
+    } else {
+      api.listCases({ page: 1, page_size: 1 }).then((res) => {
+        if (res.items && res.items.length > 0) {
+          setActiveCaseId(res.items[0].id);
+        }
+      }).catch(() => {});
+    }
+  }, [caseId]);
+
+  useEffect(() => {
+    if (activeCaseId) {
       setLoading(true);
       api
-        .getCaseValidationRuns(caseId)
+        .getCaseValidationRuns(activeCaseId)
         .then((res) => {
           if (res.runs && res.runs.length > 0) {
             const mappedRows: ValidationRow[] = [];
@@ -86,7 +99,7 @@ function ValidateContent() {
         .finally(() => setLoading(false));
 
       api
-        .getCaseMapData(caseId)
+        .getCaseMapData(activeCaseId)
         .then((data) => {
           if (data && data.discrepancy_details) {
             setMapDetails({
@@ -100,10 +113,10 @@ function ValidateContent() {
     } else {
       setLoading(false);
     }
-  }, [caseId]);
+  }, [activeCaseId]);
 
-  const nextUrl = caseId ? `/result?caseId=${caseId}` : "/result";
-  const prevUrl = caseId ? `/processing?caseId=${caseId}` : "/processing";
+  const nextUrl = activeCaseId ? `/result?caseId=${activeCaseId}` : "/result";
+  const prevUrl = activeCaseId ? `/processing?caseId=${activeCaseId}` : "/processing";
 
   return (
     <div className="mx-auto max-w-6xl px-10 py-14">

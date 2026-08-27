@@ -653,6 +653,17 @@ class ExtractionService:
                     len(consolidated),
                 )
 
+                # Trigger automated pipeline (profile -> validation -> risk -> review ready)
+                try:
+                    from app.services.review_readiness import ReviewReadinessService
+                    await ReviewReadinessService.execute_automated_pipeline(db, document.case_id)
+                except Exception as pipe_err:
+                    logger.warning(
+                        "Auto-pipeline post extraction for case %s returned: %s",
+                        document.case_id,
+                        pipe_err,
+                    )
+
             except OllamaServiceException as ose:
                 logger.error("Document %s extraction failed: %s", document.id, ose)
                 job.status = ProcessingStatus.FAILED

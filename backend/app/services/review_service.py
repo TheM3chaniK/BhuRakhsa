@@ -74,8 +74,7 @@ class ReviewService:
         authorized_area_ids: Optional[List[uuid.UUID]] = None
         if user.role == UserRole.AREA_OFFICER:
             assign_stmt = select(AreaOfficerAssignment.area_id).where(
-                AreaOfficerAssignment.user_id == user.id,
-                AreaOfficerAssignment.is_active.is_(True),
+                AreaOfficerAssignment.officer_id == user.id,
             )
             assign_res = await db.execute(assign_stmt)
             authorized_area_ids = list(assign_res.scalars().all())
@@ -91,16 +90,18 @@ class ReviewService:
             )
             .outerjoin(
                 CaseReview,
-                (CaseReview.case_id == Case.id) & (CaseReview.status != ReviewStatus.COMPLETED),
+                CaseReview.case_id == Case.id,
             )
             .outerjoin(
                 RiskAssessment,
                 (RiskAssessment.case_id == Case.id) & (RiskAssessment.status == RiskAssessmentStatus.COMPLETED),
             )
-            .where(
-                Case.status.notin_([CaseStatus.DRAFT, CaseStatus.APPROVED, CaseStatus.REJECTED, CaseStatus.CLOSED])
-            )
         )
+
+        if case_status:
+            stmt = stmt.where(Case.status == case_status)
+        else:
+            stmt = stmt.where(Case.status != CaseStatus.DRAFT)
 
         if authorized_area_ids is not None:
             stmt = stmt.where(Case.area_id.in_(authorized_area_ids))
