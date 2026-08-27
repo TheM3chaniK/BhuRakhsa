@@ -19,12 +19,9 @@ export default function Sidebar() {
       <div>
         <div className="mb-8">
           <p className="font-serif text-lg leading-tight text-ink">
-            Parcel<span className="text-brass">Check</span>
+            BhuRakhsa<span className="text-brass"></span>
           </p>
-          <p className="mt-0.5 text-[11px] uppercase tracking-widest text-ink-soft">
-            SIH26018 · Land Record MVP
-          </p>
-        </div>
+          </div>
 
         <nav className="flex flex-col">
           {steps.map((step) => {
