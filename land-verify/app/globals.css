@@ -1,0 +1,26 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  background: #F6F2E8;
+}
+
+body {
+  color: #1D2733;
+}
+
+/* faint paper grain, kept subtle */
+.paper-texture {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(29,39,51,0.035) 1px, transparent 0);
+  background-size: 14px 14px;
+}
+
+.hairline {
+  border-color: #DDD5C0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
