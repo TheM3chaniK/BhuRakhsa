@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -296,8 +297,139 @@ class ExtractionService:
             fields=groups,
         )
 
-    @staticmethod
-    async def execute_extraction_job(job_id: uuid.UUID) -> None:
+    @classmethod
+    def extract_rule_based_candidates(
+        cls, ocr_pages: Sequence[OCRResult]
+    ) -> List[LLMExtractedFieldItem]:
+        """High-precision rule-based extraction from OCR pages as primary or fallback parser."""
+        extracted: List[LLMExtractedFieldItem] = []
+
+        for p in ocr_pages:
+            text = p.text or ""
+            if not text:
+                continue
+
+            # 1. Owner Name / Testator / Purchaser
+            m_owner = re.search(
+                r"(?:I,\s*|Testator\s*[:\-]?\s*|Owner\s*[:\-]?\s*|Purchaser\s*[:\-]?\s*)([A-Z][A-Za-z\.\s]{3,40}?)(?:\s+also known as|\s+of\b|\s+hereby|\s*,|\s*\n)",
+                text,
+                re.IGNORECASE,
+            )
+            if m_owner:
+                val = m_owner.group(1).strip()
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="owner_name",
+                        value=val,
+                        confidence=0.92,
+                        page_number=p.page_number,
+                        source_text=m_owner.group(0).strip(),
+                    )
+                )
+
+            # 2. Co-owners / Legatees / Heirs / Beneficiaries
+            m_co = re.search(
+                r"(?:unto the said|in favor of|heirs|legatees|joint owners)\s+([A-Za-z\s,]+?)(?:\s+in three equal shares|\s+absolutely|\.|\n)",
+                text,
+                re.IGNORECASE,
+            )
+            if m_co:
+                val = m_co.group(1).strip()
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="co_owner_names",
+                        value=val,
+                        confidence=0.88,
+                        page_number=p.page_number,
+                        source_text=m_co.group(0).strip(),
+                    )
+                )
+
+            # 3. Document Date
+            m_date = re.search(
+                r"(?:Dated at [A-Za-z\s]+ this\s+)?(\d{1,2}(?:st|nd|rd|th)?\s+day\s+of\s+[A-Za-z]+,?\s+\d{4})",
+                text,
+                re.IGNORECASE,
+            )
+            if m_date:
+                val = m_date.group(1).strip()
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="document_date",
+                        value=val,
+                        confidence=0.95,
+                        page_number=p.page_number,
+                        source_text=m_date.group(0).strip(),
+                    )
+                )
+            else:
+                m_date2 = re.search(r"\b(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{4})\b", text)
+                if m_date2:
+                    extracted.append(
+                        LLMExtractedFieldItem(
+                            field_name="document_date",
+                            value=m_date2.group(1),
+                            confidence=0.90,
+                            page_number=p.page_number,
+                            source_text=m_date2.group(0),
+                        )
+                    )
+
+            # 4. District / Town / City
+            m_dist = re.search(
+                r"\b(Bombay|Kolkata|Mumbai|Hatgacha|Bakultala|Rautara|North 24 Parganas|South 24 Parganas)\b",
+                text,
+                re.IGNORECASE,
+            )
+            if m_dist:
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="district",
+                        value=m_dist.group(1),
+                        confidence=0.85,
+                        page_number=p.page_number,
+                        source_text=m_dist.group(0),
+                    )
+                )
+
+            # 5. Survey Number / Plot Number
+            m_plot = re.search(
+                r"(?:Plot\s*(?:No\.?)?\s*|Survey\s*(?:No\.?)?\s*|Dag\s*(?:No\.?)?\s*)([0-9]+(?:\/[0-9]+)?(?:-[A-Za-z0-9]+)?)",
+                text,
+                re.IGNORECASE,
+            )
+            if m_plot:
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="survey_number",
+                        value=m_plot.group(1),
+                        confidence=0.90,
+                        page_number=p.page_number,
+                        source_text=m_plot.group(0),
+                    )
+                )
+
+            # 6. Property Area
+            m_area = re.search(
+                r"(\d+(?:\.\d+)?\s*(?:acres?|bigha|sq\.?\s*ft|sq\.?\s*m|hectares?))",
+                text,
+                re.IGNORECASE,
+            )
+            if m_area:
+                extracted.append(
+                    LLMExtractedFieldItem(
+                        field_name="property_area",
+                        value=m_area.group(1),
+                        confidence=0.88,
+                        page_number=p.page_number,
+                        source_text=m_area.group(0),
+                    )
+                )
+
+        return extracted
+
+    @classmethod
+    async def execute_extraction_job(cls, job_id: uuid.UUID) -> None:
         """Background worker execution pipeline for structured field extraction."""
         async with async_session_factory() as db:
             job_res = await db.execute(
@@ -361,14 +493,26 @@ class ExtractionService:
                     ocr_content=ocr_content,
                 )
 
-                # 4. Invoke LLM for structured JSON output
-                llm_client = get_llm_client()
-                structured_output: LLMExtractionOutput = (
-                    await llm_client.generate_structured(
-                        prompt=prompt,
-                        response_schema=LLMExtractionOutput,
+                # 4. Invoke LLM with fallback rule-based extractor
+                structured_output: Optional[LLMExtractionOutput] = None
+                try:
+                    llm_client = get_llm_client()
+                    structured_output = await asyncio.wait_for(
+                        llm_client.generate_structured(
+                            prompt=prompt,
+                            response_schema=LLMExtractionOutput,
+                        ),
+                        timeout=15.0,
                     )
-                )
+                except Exception as ex_llm:
+                    logger.warning(
+                        "LLM structured extraction timed out or failed: %s. Using rule-based fallback.",
+                        ex_llm,
+                    )
+
+                if not structured_output or not structured_output.fields:
+                    rule_fields = cls.extract_rule_based_candidates(ocr_pages)
+                    structured_output = LLMExtractionOutput(fields=rule_fields)
 
                 # 5. Anti-hallucination validation and field consolidation
                 consolidated: Dict[str, Dict[str, Any]] = {}

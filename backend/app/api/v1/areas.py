@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,6 +13,23 @@ from app.schemas.pagination import PaginatedResponse
 from app.services.area_service import AreaService
 
 router = APIRouter(prefix="/areas", tags=["Areas"])
+
+
+@router.get(
+    "/active",
+    response_model=List[AreaResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List Active Geographical Areas",
+    description="Retrieve all active geographical revenue districts for property deed submissions.",
+)
+async def list_active_areas(
+    db: AsyncSession = Depends(get_db),
+) -> List[AreaResponse]:
+    """List active geographical areas for public / civilian deed submission."""
+    paginated = await AreaService.list_areas(
+        db=db, page=1, page_size=100, is_active=True
+    )
+    return paginated.items
 
 
 @router.get(

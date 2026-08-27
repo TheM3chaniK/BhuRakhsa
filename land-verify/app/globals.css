@@ -1,4 +1,6 @@
-﻿@tailwind base;
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -19,6 +21,36 @@ body {
 
 .hairline {
   border-color: #DDD5C0;
+}
+
+/* Custom leaflet map controls matching paper & ink theme */
+.leaflet-container {
+  font-family: inherit;
+  background-color: #EFE9DA;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #FAF8F2;
+  color: #1D2733;
+  border-radius: 4px;
+  border: 1px solid #DDD5C0;
+  box-shadow: 0 4px 12px rgba(29, 39, 51, 0.12);
+  font-size: 12px;
+}
+
+.leaflet-popup-tip {
+  background: #FAF8F2;
+}
+
+@keyframes scanline {
+  0% { transform: translateY(0%); opacity: 0; }
+  25% { opacity: 0.8; }
+  75% { opacity: 0.8; }
+  100% { transform: translateY(300px); opacity: 0; }
+}
+
+.scanner-beam {
+  animation: scanline 2.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

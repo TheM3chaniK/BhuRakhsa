@@ -18,6 +18,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(settings.LOG_LEVEL)
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     logger.info("Environment: %s", settings.ENVIRONMENT)
+    try:
+        from app.db.seed import seed_database
+        await seed_database()
+    except Exception as exc:
+        logger.warning("Startup seeding check skipped or non-fatal: %s", exc)
     yield
     logger.info("Shutting down %s", settings.APP_NAME)
 
@@ -98,6 +103,12 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     tags=["Health"],
     summary="Minimal Public Health Check",
     description="Lightweight public health probe that returns minimal status without exposing internal infrastructure details.",
+)
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    tags=["Health"],
+    include_in_schema=False,
 )
 async def get_root_health() -> HealthResponse:
     """Return minimal public health status."""
