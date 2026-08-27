@@ -2,7 +2,31 @@
 // Domain & Enums
 // =============================================================================
 
-export type UserRole = "CIVILIAN" | "AREA_OFFICER" | "SUPER_ADMIN";
+export type UserRole =
+  | "CIVILIAN"
+  | "AREA_OFFICER"
+  | "SUPER_ADMIN"
+  | "civilian"
+  | "area_officer"
+  | "super_admin";
+
+export function isOfficerRole(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === "AREA_OFFICER" || r === "OFFICER";
+}
+
+export function isAdminRole(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === "SUPER_ADMIN" || r === "ADMIN";
+}
+
+export function isCivilianRole(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === "CIVILIAN" || r === "USER";
+}
 
 export type CaseStatus =
   | "DRAFT"

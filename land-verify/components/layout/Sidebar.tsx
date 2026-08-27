@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useState, useEffect } from "react";
 import Stamp from "../ui/Stamp";
 import { api } from "@/lib/api";
-import { AreaResponse } from "@/lib/types";
+import { AreaResponse, isOfficerRole, isAdminRole } from "@/lib/types";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -14,13 +14,17 @@ export default function Sidebar() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [officerAreas, setOfficerAreas] = useState<AreaResponse[]>([]);
 
+  const isOfficer = isOfficerRole(user?.role);
+  const isAdmin = isAdminRole(user?.role);
+  const isCivilian = !isOfficer && !isAdmin;
+
   useEffect(() => {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     fetch(`${baseUrl}/health`)
       .then((res) => setBackendOnline(res.ok))
       .catch(() => setBackendOnline(false));
 
-    if (user?.role === "AREA_OFFICER") {
+    if (isOfficer) {
       api
         .getOfficerAreas()
         .then((res) => {
@@ -28,15 +32,11 @@ export default function Sidebar() {
         })
         .catch(() => {});
     }
-  }, [user]);
+  }, [user, isOfficer]);
 
   if (pathname === "/login") {
     return null;
   }
-
-  const isOfficer = user?.role === "AREA_OFFICER";
-  const isAdmin = user?.role === "SUPER_ADMIN";
-  const isCivilian = user?.role === "CIVILIAN";
 
   // Navigation Links strictly tailored by Role
   const civilianSteps = [
@@ -164,16 +164,16 @@ export default function Sidebar() {
               </p>
               <Stamp
                 tone={
-                  user.role === "AREA_OFFICER"
+                  isOfficer
                     ? "caution"
-                    : user.role === "SUPER_ADMIN"
+                    : isAdmin
                     ? "risk"
                     : "neutral"
                 }
               >
-                {user.role === "AREA_OFFICER"
+                {isOfficer
                   ? "Officer"
-                  : user.role === "SUPER_ADMIN"
+                  : isAdmin
                   ? "Admin"
                   : "Citizen"}
               </Stamp>

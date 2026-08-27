@@ -28,6 +28,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const normalizeUser = (u: UserProfile | null): UserProfile | null => {
+    if (!u) return null;
+    const r = (u.role || "").toUpperCase();
+    const normalizedRole: UserProfile["role"] =
+      r === "AREA_OFFICER" || r === "OFFICER"
+        ? "AREA_OFFICER"
+        : r === "SUPER_ADMIN" || r === "ADMIN"
+        ? "SUPER_ADMIN"
+        : "CIVILIAN";
+    return { ...u, role: normalizedRole };
+  };
+
   useEffect(() => {
     let isMounted = true;
     const existingToken = api.getToken();
@@ -37,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       api
         .getMe()
         .then((u) => {
-          if (isMounted) setUser(u);
+          if (isMounted) setUser(normalizeUser(u));
         })
         .catch(() => {
           if (isMounted) {
@@ -74,7 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await api.login(email, pass);
     setToken(res.access_token);
     const u = await api.getMe();
-    setUser(u);
+    const normalized = normalizeUser(u);
+    setUser(normalized);
+
+    // Immediate role-based routing on login
+    if (normalized?.role === "AREA_OFFICER") {
+      router.push("/queue");
+    } else if (normalized?.role === "SUPER_ADMIN") {
+      router.push("/admin/officers");
+    } else {
+      router.push("/");
+    }
   };
 
   const register = async (
